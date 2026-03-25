@@ -6,7 +6,7 @@ Ferramenta de coleta e síntese automatizada de dados públicos de empresas list
 
 ## Visão Geral
 
-O projeto automatiza a coleta semanal de dados que um analista senior realiza manualmente antes da reunião de comitê. A solução é composta por um pipeline de extração de dados e um dashboard interativo com visão consolidada por empresa.
+O projeto automatiza a coleta de dados que um analista senior realiza manualmente assim que . A solução é composta por um pipeline de extração de dados e um dashboard/interface interativa com visão consolidada por empresa.
 
 ---
 
