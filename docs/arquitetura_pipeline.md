@@ -12,7 +12,7 @@ flowchart TD
 
     %% ─── ORQUESTRAÇÃO ──────────────────────────────────────────
     subgraph AIRFLOW["⚙️ Orquestração — Apache Airflow"]
-        DAG["DAG: monday_briefing\ncron: 0 8 * * 1\n(toda segunda às 8h)"]
+        DAG["DAG: monday_briefing\ncron: 0 8 * * 1\n(trigger Manual ou segunda feita 8h)"]
         T1["Task: extract_macro\nBCB → raw"]
         T2["Task: extract_market\nyfinance → raw"]
         T3["Task: extract_fundamentals\nCVM → raw"]
@@ -34,7 +34,7 @@ flowchart TD
 
     %% ─── SÍNTESE LLM ────────────────────────────────────────────
     subgraph LLM["🤖 Síntese — LLM"]
-        T6["Task: llm_report\n─────────────────────\n· Resumo do negócio\n· Interpretação indicadores\n· Classificação notícias\n· 3 perguntas ao analista"]
+        T6["Task: llm_report\n─────────────────────\n· Resumo do negócio\n· (Talvez Interpretação indicadores)\n· Classificação notícias\n· 3 perguntas ao analista"]
         P5["reports/\nticker=XXXX\ndate=YYYY-MM-DD\n.parquet"]
     end
 
