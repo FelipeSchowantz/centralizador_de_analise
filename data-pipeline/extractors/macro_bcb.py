@@ -18,7 +18,7 @@ BCB_SERIES = {
     "balanco_comercial": 22707, # Saldo da balança comercial (US$ milhões)
 }
 
-RAW_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "raw" / "bcb"
+BRONZE_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "bronze" / "bcb"
 
 
 def extract_bcb(lookback_days: int = 365) -> None:
@@ -45,8 +45,8 @@ def extract_bcb(lookback_days: int = 365) -> None:
     result.rename(columns={"index": "data"}, inplace=True)
     result["_extracted_at"] = pd.Timestamp.utcnow()
 
-    out_path = RAW_PATH / f"bcb_{date.today().isoformat()}.parquet"
-    RAW_PATH.mkdir(parents=True, exist_ok=True)
+    out_path = BRONZE_PATH / f"bcb_{date.today().isoformat()}.parquet"
+    BRONZE_PATH.mkdir(parents=True, exist_ok=True)
     result.to_parquet(out_path, index=False)
     print(f"[BCB] Salvo em {out_path}")
 

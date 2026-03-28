@@ -1,5 +1,4 @@
 # Pipeline
-apache-airflow>=2.8.0
 yfinance>=0.2.38
 python-bcb>=0.2.0
 requests>=2.31.0

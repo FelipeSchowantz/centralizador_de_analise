@@ -2,7 +2,9 @@
 Extrator — CVM (Comissão de Valores Mobiliários)
 Fonte: dados.cvm.gov.br (pública, sem autenticação)
 Coleta: linhas de DRE via ITR/DFP
-Saída: Parquet em data-lakehouse/raw/cvm/
+Saída:
+  - __main__ (teste): CSV bruto em testes/cvm/ + Parquet filtrado em testes/cvm/
+  - Airflow:          Parquet filtrado em data-lakehouse/bronze/cvm/
 """
 
 import requests
@@ -12,7 +14,9 @@ import io
 from datetime import date
 from pathlib import Path
 
-RAW_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "raw" / "cvm"
+ROOT = Path(__file__).resolve().parents[2]
+BRONZE_PATH = ROOT / "data-lakehouse" / "bronze" / "cvm"
+TEST_PATH   = ROOT / "testes" / "cvm"
 
 # CNPJs das empresas (necessário para filtrar nos arquivos da CVM)
 EMPRESA_CNPJ = {
@@ -32,50 +36,68 @@ CONTAS_DRE = [
 CVM_ITR_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/"
 
 
-def _download_itr(ano: int, trimestre: int) -> pd.DataFrame:
-    """Baixa e descomprime o arquivo de DRE do trimestre da CVM."""
-    filename = f"itr_cia_aberta_DRE_con_{ano}.zip"
+def _download_itr(ano: int) -> pd.DataFrame:
+    """Baixa o ZIP da CVM e extrai o CSV de DRE consolidado."""
+    filename = f"itr_cia_aberta_{ano}.zip"
     url = CVM_ITR_URL + filename
     print(f"[CVM] Baixando {url}")
-    resp = requests.get(url, timeout=60)
+    resp = requests.get(url, timeout=120)
     resp.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
         csv_name = [n for n in z.namelist() if "DRE_con" in n][0]
+        print(f"[CVM] Extraindo {csv_name}")
         with z.open(csv_name) as f:
             df = pd.read_csv(f, sep=";", encoding="latin-1", dtype=str)
     return df
 
 
-def extract_cvm(tickers: list[str]) -> None:
-    """
-    Coleta linhas selecionadas da DRE para cada empresa e salva em Parquet.
-    Usa o ITR (trimestral) do ano corrente.
-    """
-    ano_atual = date.today().year
+def _filter(df_raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
+    """Filtra pelas empresas e contas contábeis de interesse."""
     cnpjs = [EMPRESA_CNPJ[t] for t in tickers if t in EMPRESA_CNPJ]
-
-    try:
-        df_raw = _download_itr(ano=ano_atual, trimestre=None)
-    except Exception as e:
-        print(f"[CVM] Tentando ano anterior: {e}")
-        df_raw = _download_itr(ano=ano_atual - 1, trimestre=None)
-
-    # Normaliza CNPJ para comparação
-    df_raw["CNPJ_CIA"] = df_raw["CNPJ_CIA"].str.replace(r"\D", "", regex=True)
     cnpjs_clean = [c.replace(".", "").replace("/", "").replace("-", "") for c in cnpjs]
 
-    df_filtered = df_raw[
+    df_raw["CNPJ_CIA"] = df_raw["CNPJ_CIA"].str.replace(r"\D", "", regex=True)
+
+    df = df_raw[
         df_raw["CNPJ_CIA"].isin(cnpjs_clean) &
         df_raw["CD_CONTA"].isin(CONTAS_DRE)
     ].copy()
 
-    df_filtered["_extracted_at"] = pd.Timestamp.utcnow()
+    df["_extracted_at"] = pd.Timestamp.utcnow()
+    return df
 
-    out_path = RAW_PATH / f"cvm_{date.today().isoformat()}.parquet"
-    RAW_PATH.mkdir(parents=True, exist_ok=True)
-    df_filtered.to_parquet(out_path, index=False)
-    print(f"[CVM] {len(df_filtered)} linhas salvas em {out_path}")
+
+def extract_cvm(tickers: list[str], out_path: Path = BRONZE_PATH) -> None:
+    """
+    Coleta DRE da CVM, filtra empresas e salva Parquet.
+    Usado pelo Airflow.
+    """
+    ano_atual = date.today().year
+
+    try:
+        df_raw = _download_itr(ano=ano_atual)
+    except Exception as e:
+        print(f"[CVM] Tentando ano anterior: {e}")
+        df_raw = _download_itr(ano=ano_atual - 1)
+
+    df_filtered = _filter(df_raw, tickers)
+
+    out_path.mkdir(parents=True, exist_ok=True)
+    parquet_file = out_path / f"cvm_{date.today().isoformat()}.parquet"
+    df_filtered.to_parquet(parquet_file, index=False)
+    print(f"[CVM] {len(df_filtered)} linhas salvas em {parquet_file}")
 
 
 if __name__ == "__main__":
-    extract_cvm(tickers=["ASAI3", "PRIO3", "RENT3"])
+    ano_atual = date.today().year
+
+    try:
+        df_raw = _download_itr(ano=ano_atual)
+    except Exception as e:
+        print(f"[CVM] Tentando ano anterior: {e}")
+        df_raw = _download_itr(ano=ano_atual - 1)
+
+    TEST_PATH.mkdir(parents=True, exist_ok=True)
+    csv_file = TEST_PATH / f"cvm_raw_{date.today().isoformat()}.csv"
+    df_raw.to_csv(csv_file, index=False)
+    print(f"[CVM] CSV bruto salvo em {csv_file}")

@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import date
 from pathlib import Path
 
-RAW_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "raw" / "yfinance"
+BRONZE_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "bronze" / "yfinance"
 
 # Campos de interesse do info do yfinance
 INFO_FIELDS = [
@@ -53,8 +53,8 @@ def extract_yfinance(tickers: list[str]) -> None:
 
     df = pd.DataFrame(rows)
 
-    out_path = RAW_PATH / f"yfinance_{date.today().isoformat()}.parquet"
-    RAW_PATH.mkdir(parents=True, exist_ok=True)
+    out_path = BRONZE_PATH / f"yfinance_{date.today().isoformat()}.parquet"
+    BRONZE_PATH.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_path, index=False)
     print(f"[yfinance] Salvo em {out_path}")
 

@@ -14,7 +14,7 @@ PG_URL = os.getenv(
     "postgresql://airflow:airflow@localhost:5432/charles_river"
 )
 
-RAW_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "raw"
+BRONZE_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "bronze"
 
 TABLE_MAP = {
     "bcb":      "staging.raw_bcb",
@@ -25,7 +25,7 @@ TABLE_MAP = {
 
 def load_source(source: str) -> None:
     """Carrega o Parquet mais recente de uma fonte no PostgreSQL."""
-    source_path = RAW_PATH / source
+    source_path = BRONZE_PATH / source
     parquets = sorted(source_path.glob("*.parquet"))
     if not parquets:
         print(f"[PG] Nenhum Parquet encontrado para {source}")

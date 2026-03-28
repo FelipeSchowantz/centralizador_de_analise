@@ -13,7 +13,7 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
-RAW_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "raw"
+BRONZE_PATH = Path(__file__).resolve().parents[2] / "data-lakehouse" / "bronze"
 
 
 def _get_drive_service():
@@ -43,7 +43,7 @@ def upload_parquet(file_path: Path, service=None) -> str:
 def upload_all_raw() -> None:
     """Faz upload de todos os Parquets da camada raw para o Drive."""
     service = _get_drive_service()
-    parquets = list(RAW_PATH.rglob("*.parquet"))
+    parquets = list(BRONZE_PATH.rglob("*.parquet"))
     if not parquets:
         print("[Drive] Nenhum Parquet encontrado para upload.")
         return

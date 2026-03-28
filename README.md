@@ -38,14 +38,13 @@ O projeto automatiza a coleta semanal de dados que um analista senior realiza ma
                       │  Agendamento: toda segunda às 8h (cron: 0 8 * * 1)
                       │
 ┌─────────────────────▼────────────────────────────────────────────┐
-│                    DATA-LAKEHOUSE                                │
+│              DATA-LAKEHOUSE — Medallion Architecture             │
 │                                                                  │
-│  raw/bcb/          → Parquet bruto do Banco Central              │
-│  raw/yfinance/     → Parquet bruto do Yahoo Finance              │
-│  raw/cvm/          → Parquet bruto da CVM                        │
-│  analytical/       → dados transformados e prontos               │
-│                                                                  │
-│  Backup: Google Drive (upload automático pelo loader)            │
+│  bronze/bcb/       → Parquet bruto do Banco Central              │
+│  bronze/yfinance/  → Parquet bruto do Yahoo Finance              │
+│  bronze/cvm/       → Parquet bruto da CVM                        │
+│  silver/           → dados normalizados (dbt staging)            │
+│  gold/             → dados prontos para consumo (dbt marts)      │
 └─────────────────────┬────────────────────────────────────────────┘
                       │
                       ▼  PostgreSQL + dbt core
@@ -144,12 +143,13 @@ centralizador_de_analise/
 │       ├── parquet_loader.py        # Upload Parquet → Google Drive
 │       └── postgres_loader.py       # Carga Parquet → PostgreSQL (staging)
 │
-├── data-lakehouse/
-│   ├── raw/
+├── data-lakehouse/                  # Medallion Architecture
+│   ├── bronze/
 │   │   ├── bcb/                     # Parquets brutos do Banco Central
 │   │   ├── yfinance/                # Parquets brutos do Yahoo Finance
 │   │   └── cvm/                     # Parquets brutos da CVM
-│   └── analytical/                  # Dados processados (gerados pelo dbt)
+│   ├── silver/                      # Dados normalizados (dbt staging)
+│   └── gold/                        # Dados prontos para consumo (dbt marts)
 │
 ├── dbt/
 │   ├── models/
