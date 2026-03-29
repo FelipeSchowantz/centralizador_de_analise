@@ -11,7 +11,7 @@ x-airflow-env: &airflow-env
 
   LLM_API_KEY: ${LLM_API_KEY:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
-  POSTGRES_URL: postgresql://airflow:airflow@postgres:5432/airflow
+  POSTGRES_URL: postgresql://airflow:airflow@postgres:5432/hipotetical_fia
   GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
   GOOGLE_DRIVE_FOLDER_ID: ${GOOGLE_DRIVE_FOLDER_ID:-}
 
