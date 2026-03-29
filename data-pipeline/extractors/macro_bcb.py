@@ -59,7 +59,7 @@ def extract_bcb(lookback_days: int = 365, out_path: Path = BRONZE_PATH) -> None:
         raise RuntimeError("[BCB] Nenhuma série coletada. Verifique a conexão.")
 
     result = pd.concat(frames, axis=1).reset_index()
-    result.rename(columns={"index": "data"}, inplace=True)
+    result.rename(columns={"index": "data", "Date": "data"}, inplace=True)
     result["_extracted_at"] = pd.Timestamp.utcnow()
     print(f"[BCB] DataFrame final: {result.shape[0]} linhas x {result.shape[1]} colunas")
     print(f"[BCB] Colunas: {list(result.columns)}")
