@@ -77,9 +77,13 @@ def load_source(source: str) -> None:
 
 def run_dbt() -> None:
     """Executa dbt run + dbt test após o carregamento."""
+    import shutil
+    dbt_bin = shutil.which("dbt") or "/home/airflow/.local/bin/dbt"
+    print(f"[DBT] Usando binário: {dbt_bin}")
+
     print("[DBT] Iniciando dbt run...")
     result = subprocess.run(
-        ["dbt", "run", "--profiles-dir", str(DBT_PROJECT_DIR)],
+        [dbt_bin, "run", "--profiles-dir", str(DBT_PROJECT_DIR)],
         cwd=str(DBT_PROJECT_DIR),
         capture_output=True,
         text=True,
@@ -91,7 +95,7 @@ def run_dbt() -> None:
 
     print("[DBT] Iniciando dbt test...")
     result = subprocess.run(
-        ["dbt", "test", "--profiles-dir", str(DBT_PROJECT_DIR)],
+        [dbt_bin, "test", "--profiles-dir", str(DBT_PROJECT_DIR)],
         cwd=str(DBT_PROJECT_DIR),
         capture_output=True,
         text=True,

@@ -99,6 +99,14 @@ services:
     command: scheduler
     restart: unless-stopped
 
+  # ── Adminer ───────────────────────────────────────────────────────────────
+  adminer:
+    image: adminer:4.8.1
+    container_name: cr_adminer
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
   postgres-data:
