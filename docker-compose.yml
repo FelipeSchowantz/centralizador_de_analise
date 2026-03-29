@@ -9,12 +9,11 @@ x-airflow-env: &airflow-env
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
   PYTHONPATH: /opt/airflow/data-pipeline
 
-  # Variáveis do projeto (sobrescreva no .env)
-  LLM_API_KEY: ${LLM_API_KEY}
+  LLM_API_KEY: ${LLM_API_KEY:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
-  POSTGRES_URL: postgresql://airflow:airflow@postgres:5432/charles_river
-  GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON}
-  GOOGLE_DRIVE_FOLDER_ID: ${GOOGLE_DRIVE_FOLDER_ID}
+  POSTGRES_URL: postgresql://airflow:airflow@postgres:5432/airflow
+  GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+  GOOGLE_DRIVE_FOLDER_ID: ${GOOGLE_DRIVE_FOLDER_ID:-}
 
 x-airflow-volumes: &airflow-volumes
   - ./data-pipeline/dags:/opt/airflow/dags
@@ -25,12 +24,12 @@ x-airflow-volumes: &airflow-volumes
   - ./data-lakehouse:/opt/airflow/data-lakehouse
   - airflow-logs:/opt/airflow/logs
 
-# ── Serviços ─────────────────────────────────────────────────────────────────
+# ── Serviços ──────────────────────────────────────────────────────────────────
 services:
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16
+    image: postgres:14.22
     container_name: cr_postgres
     environment:
       POSTGRES_USER: airflow
@@ -47,7 +46,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Airflow Init (roda uma vez) ─────────────────────────────────────────────
+  # ── Airflow Init (roda uma vez) ───────────────────────────────────────────
   airflow-init:
     build: .
     container_name: cr_airflow_init
@@ -56,26 +55,19 @@ services:
         condition: service_healthy
     environment:
       <<: *airflow-env
-      _AIRFLOW_DB_UPGRADE: "true"
+      _AIRFLOW_DB_MIGRATE: "true"
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
+      _AIRFLOW_WWW_USER_FIRSTNAME: Admin
+      _AIRFLOW_WWW_USER_LASTNAME: User
+      _AIRFLOW_WWW_USER_EMAIL: admin@example.com
+      _AIRFLOW_WWW_USER_ROLE: Admin
     volumes: *airflow-volumes
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db migrate &&
-        airflow users create \
-          --username admin \
-          --firstname Admin \
-          --lastname CR \
-          --role Admin \
-          --email admin@charlesriver.local \
-          --password admin
+    command: version
     restart: on-failure
 
-  # ── Airflow Webserver ───────────────────────────────────────────────────────
+  # ── Airflow Webserver ─────────────────────────────────────────────────────
   airflow-webserver:
     build: .
     container_name: cr_airflow_webserver
@@ -94,7 +86,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ── Airflow Scheduler ───────────────────────────────────────────────────────
+  # ── Airflow Scheduler ─────────────────────────────────────────────────────
   airflow-scheduler:
     build: .
     container_name: cr_airflow_scheduler
