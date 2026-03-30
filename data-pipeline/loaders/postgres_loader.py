@@ -64,6 +64,7 @@ def load_source(source: str) -> None:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            cur.execute(f"TRUNCATE TABLE {table}")
             execute_values(cur, sql, values)
         conn.commit()
         print(f"[PG] {len(df)} linhas carregadas em {table} a partir de {latest.name}")
