@@ -54,5 +54,6 @@ CREATE TABLE IF NOT EXISTS staging.raw_cvm (
     "DS_CONTA"       TEXT,
     "VL_CONTA"       TEXT,
     "ST_CONTA_FIXA"  TEXT,
+    _statement       TEXT,
     _extracted_at    TIMESTAMPTZ
 );
