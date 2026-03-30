@@ -1,15 +1,15 @@
 -- gold_asai3_cf.sql
--- ASAI3 — Cash Flow Statement (6.xx)
+-- ASAI3 — Demonstração de Fluxo de Caixa (6.xx)
 
 select
-    ref_date,
-    period_end,
-    account_code,
-    account_name,
-    account_value,
-    currency_scale,
+    "DT_REFER"      as data_referencia,
+    "DT_FIM_EXERC"  as data_fim_exercicio,
+    "CD_CONTA"      as codigo_conta,
+    "DS_CONTA"      as descricao_conta,
+    "VL_CONTA"      as valor,
+    "ESCALA_MOEDA"  as escala,
     _extracted_at
 from {{ ref('stg_cvm') }}
-where cnpj = '06057223000171'
-  and account_code like '6.%'
-order by ref_date desc, account_code
+where "CNPJ_CIA" = '06057223000171'
+  and "CD_CONTA" like '6.%'
+order by "DT_REFER" desc, "CD_CONTA"

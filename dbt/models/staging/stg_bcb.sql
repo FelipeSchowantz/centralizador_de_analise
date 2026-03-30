@@ -1,30 +1,28 @@
-{{
-    config(
-        materialized = "incremental",
-        incremental_strategy = "append",
-        alias = "stg_bcb"
-    )
-}}
-
 -- stg_bcb.sql
--- Normalizes raw BCB macro data: casts types and renames columns to English.
--- NaN strings (from pandas) are converted to NULL before numeric casting.
--- Incremental: only processes rows extracted after the latest loaded timestamp.
+-- Silver layer — Banco Central do Brasil
+-- Tipagem e limpeza de formatação. Mesmas colunas da raw.
 
-select
-    data::date                                              as ref_date,
-    NULLIF(selic_meta,       'NaN')::numeric                as selic_rate,
-    NULLIF(ipca_mensal,      'NaN')::numeric                as ipca_monthly,
-    NULLIF(desemprego,       'NaN')::numeric                as unemployment_rate,
-    NULLIF(cambio_usd_brl,   'NaN')::numeric                as usd_brl_rate,
-    NULLIF(balanco_comercial,'NaN')::numeric                as trade_balance,
-    _extracted_at
-from {{ source('staging', 'raw_bcb') }}
-where data is not null
+with source as (
+    select * from {{ source('staging', 'raw_bcb') }}
+),
 
-{% if is_incremental() %}
-    and _extracted_at > (
-        select coalesce(max(_extracted_at), '1900-01-01'::timestamptz)
-        from {{ this }}
-    )
-{% endif %}
+typed as (
+    select
+        -- DATE
+        cast(data as date)                                              as data,
+
+        -- FLOAT: remove pontos de milhar, troca vírgula por ponto
+        cast(replace(replace(selic_meta,       '.', ''), ',', '.') as float)  as selic_meta,
+        cast(replace(replace(ipca_mensal,      '.', ''), ',', '.') as float)  as ipca_mensal,
+        cast(replace(replace(desemprego,       '.', ''), ',', '.') as float)  as desemprego,
+        cast(replace(replace(cambio_usd_brl,   '.', ''), ',', '.') as float)  as cambio_usd_brl,
+        cast(replace(replace(balanco_comercial,'.', ''), ',', '.') as float)  as balanco_comercial,
+
+        -- TIMESTAMPTZ
+        cast(_extracted_at as timestamptz)                              as _extracted_at
+
+    from source
+    where data is not null
+)
+
+select * from typed

@@ -1,40 +1,36 @@
-{{
-    config(
-        materialized = "incremental",
-        incremental_strategy = "append",
-        alias = "stg_yfinance"
-    )
-}}
-
 -- stg_yfinance.sql
--- Normalizes raw Yahoo Finance data: casts types and renames columns to English.
--- NaN strings (from pandas) are converted to NULL before numeric casting.
--- .SA suffix is stripped from ticker (e.g. ASAI3.SA -> ASAI3).
--- Incremental: only processes rows extracted after the latest loaded timestamp.
+-- Silver layer — Yahoo Finance
+-- Tipagem e limpeza de formatação. Mesmas colunas da raw.
 
-select
-    REPLACE(ticker, '.SA', '')                              as ticker,
-    "shortName"                                             as company_name,
-    sector,
-    NULLIF("marketCap",          'NaN')::bigint             as market_cap,
-    NULLIF("currentPrice",       'NaN')::numeric            as current_price,
-    NULLIF("trailingPE",         'NaN')::numeric            as pe_ratio,
-    NULLIF("priceToBook",        'NaN')::numeric            as pb_ratio,
-    NULLIF("enterpriseToEbitda", 'NaN')::numeric            as ev_ebitda,
-    NULLIF("returnOnEquity",     'NaN')::numeric            as roe,
-    NULLIF("profitMargins",      'NaN')::numeric            as net_margin,
-    NULLIF("ebitdaMargins",      'NaN')::numeric            as ebitda_margin,
-    NULLIF("dividendYield",      'NaN')::numeric            as dividend_yield,
-    NULLIF("debtToEquity",       'NaN')::numeric            as debt_to_equity,
-    NULLIF("totalRevenue",       'NaN')::bigint             as total_revenue,
-    NULLIF("netIncomeToCommon",  'NaN')::bigint             as net_income,
-    _extracted_at
-from {{ source('staging', 'raw_yfinance') }}
-where ticker is not null
+with source as (
+    select * from {{ source('staging', 'raw_yfinance') }}
+),
 
-{% if is_incremental() %}
-    and _extracted_at > (
-        select coalesce(max(_extracted_at), '1900-01-01'::timestamptz)
-        from {{ this }}
-    )
-{% endif %}
+typed as (
+    select
+        -- VARCHAR
+        cast(ticker              as varchar)   as ticker,
+        cast("shortName"         as varchar)   as "shortName",
+        cast(sector              as varchar)   as sector,
+
+        -- FLOAT
+        cast(replace(replace("marketCap",            '.', ''), ',', '.') as float)  as "marketCap",
+        cast(replace(replace("currentPrice",         '.', ''), ',', '.') as float)  as "currentPrice",
+        cast(replace(replace("trailingPE",           '.', ''), ',', '.') as float)  as "trailingPE",
+        cast(replace(replace("priceToBook",          '.', ''), ',', '.') as float)  as "priceToBook",
+        cast(replace(replace("enterpriseToEbitda",   '.', ''), ',', '.') as float)  as "enterpriseToEbitda",
+        cast(replace(replace("returnOnEquity",       '.', ''), ',', '.') as float)  as "returnOnEquity",
+        cast(replace(replace("profitMargins",        '.', ''), ',', '.') as float)  as "profitMargins",
+        cast(replace(replace("ebitdaMargins",        '.', ''), ',', '.') as float)  as "ebitdaMargins",
+        cast(replace(replace("dividendYield",        '.', ''), ',', '.') as float)  as "dividendYield",
+        cast(replace(replace("debtToEquity",         '.', ''), ',', '.') as float)  as "debtToEquity",
+        cast(replace(replace("totalRevenue",         '.', ''), ',', '.') as float)  as "totalRevenue",
+        cast(replace(replace("netIncomeToCommon",    '.', ''), ',', '.') as float)  as "netIncomeToCommon",
+
+        -- TIMESTAMPTZ
+        cast(_extracted_at as timestamptz)    as _extracted_at
+
+    from source
+)
+
+select * from typed
