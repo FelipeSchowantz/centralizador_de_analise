@@ -101,6 +101,27 @@ services:
     command: scheduler
     restart: unless-stopped
 
+  # ── Dashboard (Streamlit) ─────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: cr_dashboard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: hipotetical_fia
+      PG_USER: airflow
+      PG_PASSWORD: airflow
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
   # ── Adminer ───────────────────────────────────────────────────────────────
   adminer:
     image: adminer:4.8.1

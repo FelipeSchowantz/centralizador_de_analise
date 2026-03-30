@@ -185,6 +185,31 @@ class AudioTranscriber:
         return {tbl: df}
 
 
+# ── TXTTranscriptParser ───────────────────────────────────────────────────────
+class TXTTranscriptParser:
+    """Lê transcrições em .txt e retorna um DataFrame com o conteúdo."""
+
+    def __init__(self, meta: FileNameParser):
+        self.meta = meta
+
+    def parse(self) -> dict[str, pd.DataFrame]:
+        text = self.meta.filepath.read_text(encoding="utf-8", errors="replace")
+        # Divide em chunks de ~2000 chars para simular páginas
+        chunk_size = 2000
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+        rows = [{"page": i+1, "text": chunk.strip()} for i, chunk in enumerate(chunks)]
+        df = pd.DataFrame(rows)
+        df["ticker"]         = self.meta.ticker
+        df["period"]         = self.meta.period
+        df["reference_date"] = self.meta.reference_date
+        df["_extracted_at"]  = pd.Timestamp.utcnow()
+
+        tbl = table_name(self.meta.ticker, self.meta.period, self.meta.doc_type, "transcript")
+        print(f"[TXT] {self.meta.filename} — {len(df)} chunks → {tbl}")
+        return {tbl: df}
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 def get_parser(filepath: Path):
     """Retorna o parser correto baseado no nome e extensão do arquivo."""
@@ -198,5 +223,7 @@ def get_parser(filepath: Path):
         return ExcelParser(meta)
     elif ext == "pdf":
         return PDFTranscriptParser(meta)
+    elif ext == "txt":
+        return TXTTranscriptParser(meta)
     else:
         raise ValueError(f"Extensão não suportada: {ext}")

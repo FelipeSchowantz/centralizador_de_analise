@@ -35,27 +35,69 @@ DEFAULT_ARGS = {
 def _find_new_file() -> str:
     """Retorna o path do primeiro arquivo novo em uploads/."""
     for f in sorted(UPLOADS_DIR.iterdir()):
-        if f.is_file() and f.suffix.lower() in (".pdf", ".xlsx", ".mp3", ".mp4", ".wav"):
+        if f.is_file() and f.suffix.lower() in (".pdf", ".xlsx", ".mp3", ".mp4", ".wav", ".txt"):
             return str(f)
     raise FileNotFoundError(f"Nenhum arquivo novo encontrado em {UPLOADS_DIR}")
 
 
+def _save_transcripts(tables: dict, ticker: str, period: str, reference_date) -> None:
+    """Salva texto extraído em staging.transcripts para uso no RAG."""
+    import os
+    import psycopg2
+    from psycopg2.extras import execute_values
+
+    conn = psycopg2.connect(
+        host=os.getenv("PG_HOST", "postgres"),
+        port=os.getenv("PG_PORT", "5432"),
+        dbname=os.getenv("PG_DB", "hipotetical_fia"),
+        user=os.getenv("PG_USER", "airflow"),
+        password=os.getenv("PG_PASSWORD", "airflow"),
+    )
+    try:
+        rows = []
+        for df in tables.values():
+            if "text" in df.columns:
+                for _, row in df.iterrows():
+                    rows.append((
+                        ticker, period, reference_date,
+                        row.get("page"), row.get("text"),
+                        row.get("_extracted_at"),
+                    ))
+        if rows:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM staging.transcripts WHERE ticker = %s AND period = %s",
+                    (ticker, period)
+                )
+                execute_values(cur,
+                    """INSERT INTO staging.transcripts
+                       (ticker, period, reference_date, page_number, content, _extracted_at)
+                       VALUES %s""",
+                    rows
+                )
+            conn.commit()
+            print(f"[INGEST] {len(rows)} páginas salvas em staging.transcripts")
+    finally:
+        conn.close()
+
+
 def parse_and_load_task(**context):
-    from utils.file_parser import get_parser
+    from utils.file_parser import get_parser, FileNameParser
     from utils.site_writer import write_all
 
     filepath = Path(_find_new_file())
     print(f"[INGEST] Processando: {filepath.name}")
 
     parser = get_parser(filepath)
+    meta   = FileNameParser(filepath)
 
-    # parse() ou transcribe() dependendo do tipo
     if hasattr(parser, "parse"):
         tables = parser.parse()
     else:
         tables = parser.transcribe()
 
     write_all(tables)
+    _save_transcripts(tables, meta.ticker, meta.period, meta.reference_date)
 
     # Move para processed/
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

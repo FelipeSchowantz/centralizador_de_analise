@@ -55,5 +55,16 @@ CREATE TABLE IF NOT EXISTS staging.raw_cvm (
     "VL_CONTA"       TEXT,
     "ST_CONTA_FIXA"  TEXT,
     _statement       TEXT,
+    _source          TEXT,
     _extracted_at    TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS staging.transcripts (
+    id              SERIAL PRIMARY KEY,
+    ticker          TEXT,
+    period          TEXT,
+    reference_date  DATE,
+    page_number     INTEGER,
+    content         TEXT,
+    _extracted_at   TIMESTAMPTZ
 );
