@@ -1,8 +1,8 @@
-# Centralizador de Análise — Charles River Capital
+# Centralizador de Análise — PoC
 
-Ferramenta de coleta e síntese automatizada de dados públicos de empresas listadas na B3, desenvolvida como PoC para o processo seletivo DS&AI da Charles River Capital.
+Ferramenta de coleta, transformação e síntese automatizada de dados públicos de empresas listadas na B3, desenvolvida como solução para o Case Study DS&AI da Charles River Capital 2026.
 
-O projeto automatiza a coleta semanal de dados que um analista senior realiza manualmente antes da reunião de comitê das 14h. A solução é composta por um pipeline de extração, armazenamento em Parquet (data-lakehouse), transformação via dbt, síntese via LLM e um dashboard interativo com visão consolidada por empresa.
+O projeto automatiza a coleta semanal de dados que um analista realiza manualmente antes da reunião de comitê: dados macro (BCB), múltiplos de mercado (Yahoo Finance) e demonstrações financeiras (CVM), processados via arquitetura medallion e sintetizados por LLM ancorada na tese de investimento.
 
 ---
 
@@ -12,118 +12,77 @@ O projeto automatiza a coleta semanal de dados que um analista senior realiza ma
 |--------|---------|-------|
 | ASAI3 | Assaí Atacadista | Varejo Alimentar |
 | PRIO3 | PetroRio | Commodities / Petróleo |
-| RENT3 | Localiza Hertz | Serviços / Mobilidade |
+| RENT3 | Localiza | Serviços / Mobilidade |
 
-> A escolha cobre três setores distintos para validar a generalidade do pipeline. Em produção, qualquer ticker B3 pode ser adicionado sem alterações estruturais.
+> A escolha cobre três setores distintos para validar a generalidade do pipeline. Qualquer ticker B3 pode ser adicionado em `data-pipeline/utils/company_config.py` sem alterações estruturais.
 
 ---
 
 ## Arquitetura
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     FONTES DE DADOS                              │
-│                                                                  │
-│  [Macro]  BCB — api.bcb.gov.br                                   │
-│           SELIC · IPCA · Desemprego · Câmbio · Bal. Comercial    │
-│                                                                  │
-│  [Micro]  Yahoo Finance (yfinance)                               │
-│           Preço · P/L · P/VP · EV/EBITDA · ROE · Margem · DY    │
-│                                                                  │
-│  [DRE]    CVM — dados.cvm.gov.br                                 │
-│           Receita · EBIT · Lucro Líquido (ITR/DFP)              │
-└─────────────────────┬────────────────────────────────────────────┘
-                      │
-                      ▼  Apache Airflow — DAG: monday_briefing
-                      │  Agendamento: toda segunda às 8h (cron: 0 8 * * 1)
-                      │
-┌─────────────────────▼────────────────────────────────────────────┐
-│              DATA-LAKEHOUSE — Medallion Architecture             │
-│                                                                  │
-│  bronze/bcb/       → Parquet bruto do Banco Central              │
-│  bronze/yfinance/  → Parquet bruto do Yahoo Finance              │
-│  bronze/cvm/       → Parquet bruto da CVM                        │
-│  silver/           → dados normalizados (dbt staging)            │
-│  gold/             → dados prontos para consumo (dbt marts)      │
-└─────────────────────┬────────────────────────────────────────────┘
-                      │
-                      ▼  PostgreSQL + dbt core
-                      │  staging → marts (por empresa)
-                      │
-┌─────────────────────▼────────────────────────────────────────────┐
-│                    SÍNTESE — LLM                                 │
-│                                                                  │
-│  A LLM não emite opiniões qualitativas genéricas.                │
-│  Ela descreve brevemente grandes mudanças ou alterações          │
-│  relevantes nos dados, sempre ancorada na tese de                │
-│  investimento do fundo (value investing · downside first).       │
-│                                                                  │
-│  Exemplo de output:                                              │
-│  "Receita líquida cresceu 18% vs trimestre anterior.             │
-│   Dívida líq./EBITDA recuou de 3,2x para 2,8x — alinhado        │
-│   à tese de desalavancagem. Margem EBITDA contraiu 1,2pp."       │
-└─────────────────────┬────────────────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────▼────────────────────────────────────────────┐
-│                 DASHBOARD — Streamlit                            │
-│   Uma página por empresa + visão macro consolidada              │
-│   Indicadores definidos em alinhamento com a tese do analista    │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                     FONTES DE DADOS                          │
+│                                                              │
+│  BCB (api.bcb.gov.br)     — Macro: Selic, IPCA, câmbio...  │
+│  Yahoo Finance (yfinance) — Micro: preço, P/L, EV/EBITDA... │
+│  CVM (dados.cvm.gov.br)   — DRE, Balanço, Fluxo de Caixa   │
+│  uploads/ (PDF/XLSX)      — Transcrições earnings calls      │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ▼  Apache Airflow 2.9.2
+                       │  DAG monday_briefing — toda segunda às 8h
+                       │  DAG site_ingestion  — FileSensor em uploads/
+                       │  DAG llm_synthesis   — toda segunda às 9h
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│            DATA-LAKEHOUSE — Medallion Architecture           │
+│                                                              │
+│  bronze/   → Parquet bruto por fonte (auditável, imutável)  │
+│  staging/  → Tabelas tipadas no PostgreSQL (via dbt)        │
+│  gold/     → Tabelas analíticas por empresa e tema (dbt)    │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ▼  PostgreSQL 14 + dbt-core
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│                   CAMADA GOLD                                │
+│                                                              │
+│  gold_macro          — Selic, IPCA, câmbio, desemprego      │
+│  gold_market         — Múltiplos de mercado (3 empresas)    │
+│  gold_{ticker}_dre   — Income Statement por empresa         │
+│  gold_{ticker}_balance — Balance Sheet por empresa          │
+│  gold_{ticker}_cf    — Cash Flow por empresa                │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ▼  LLM (Anthropic / OpenAI)
+                       │  Detecta mudanças relevantes pela tese
+                       │  Lê transcrições de earnings calls (RAG)
+                       │
+┌──────────────────────▼───────────────────────────────────────┐
+│              DASHBOARD — Streamlit + Plotly                  │
+│  Macro · Múltiplos · DRE/Balanço · Síntese LLM             │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Stack Tecnológico
+## Stack
 
-| Camada | Tecnologia | Função |
+| Camada | Tecnologia | Versão |
 |--------|-----------|--------|
-| Orquestração | Apache Airflow | DAG semanal toda segunda às 8h |
-| Extração macro | `python-bcb` | SELIC, IPCA, câmbio, desemprego |
-| Extração micro | `yfinance` | Preço, múltiplos, margens |
-| Extração DRE | `requests` + CVM API | Linhas de DRE (ITR/DFP) |
-| Armazenamento raw | Parquet + Google Drive | Camada raw auditável |
-| Banco analítico | PostgreSQL | Persistência estruturada |
-| Transformação | dbt core | Staging → Marts com testes |
-| Síntese | LLM (Anthropic/OpenAI) | Detecção de mudanças pela tese |
-| Dashboard | Streamlit + Plotly | Interface interativa |
-
----
-
-## Fontes de Dados
-
-| Fonte | Tipo | O que fornece |
-|-------|------|---------------|
-| [BCB](https://api.bcb.gov.br) | Macro | SELIC, IPCA, desemprego, câmbio, balanço comercial |
-| [Yahoo Finance](https://finance.yahoo.com) | Micro | Preço, múltiplos de mercado, margens |
-| [CVM](https://dados.cvm.gov.br) | Micro | DRE completa (ITR/DFP), dados cadastrais |
-
-Todas as fontes são **públicas e gratuitas**, sem autenticação paga.
-
----
-
-## Indicadores Monitorados
-
-> Definidos em alinhamento com a tese de value investing do analista.
-> Em uma implementação real, esses indicadores são configurados diretamente pelo analista responsável.
-
-| # | Indicador | Fonte | Por quê importa |
-|---|-----------|-------|-----------------|
-| 1 | TBD | — | — |
-| 2 | TBD | — | — |
-| 3 | TBD | — | — |
-| 4 | TBD | — | — |
-
----
-
-## Papel da LLM
-
-A LLM atua como um **detector de mudanças relevantes**, não como analista.
-
-- **Faz:** descreve variações significativas nos indicadores em relação ao período anterior e sinaliza se impactam a tese
-- **Não faz:** emite opiniões qualitativas genéricas, avalia gestão, cultura ou perspectivas subjetivas
-
-O prompt é construído com base na tese do fundo (value investing, proteção ao downside) e na comparação histórica dos dados coletados.
+| Orquestração | Apache Airflow | 2.9.2 |
+| Containerização | Docker + Docker Compose | — |
+| Banco de dados | PostgreSQL | 14.22 |
+| Transformação | dbt-core + dbt-postgres | — |
+| Extração macro | python-bcb | — |
+| Extração mercado | yfinance | — |
+| Extração DRE | requests + CVM API pública | — |
+| Ingestão docs | pdfplumber + openpyxl | — |
+| Conexão DB | psycopg2 | — |
+| Síntese LLM | Anthropic / OpenAI | — |
+| Dashboard | Streamlit + Plotly | — |
+| Inspeção SQL | Adminer | 4.8.1 |
 
 ---
 
@@ -134,145 +93,182 @@ centralizador_de_analise/
 │
 ├── data-pipeline/
 │   ├── dags/
-│   │   └── monday_briefing.py       # DAG Airflow — cron toda segunda às 8h
+│   │   ├── monday_briefing.py   # Extração → PostgreSQL → dbt (toda segunda às 8h)
+│   │   ├── llm_synthesis.py     # RAG + síntese LLM (toda segunda às 9h)
+│   │   └── site_ingestion.py    # FileSensor → parse PDF/XLSX → staging
 │   ├── extractors/
-│   │   ├── macro_bcb.py             # Extrator BCB (SELIC, IPCA, câmbio…)
-│   │   ├── market_yfinance.py       # Extrator Yahoo Finance (preço, múltiplos)
-│   │   └── fundamentals_cvm.py      # Extrator CVM (DRE via ITR/DFP)
-│   └── loaders/
-│       ├── parquet_loader.py        # Upload Parquet → Google Drive
-│       └── postgres_loader.py       # Carga Parquet → PostgreSQL (staging)
-│
-├── data-lakehouse/                  # Medallion Architecture
-│   ├── bronze/
-│   │   ├── bcb/                     # Parquets brutos do Banco Central
-│   │   ├── yfinance/                # Parquets brutos do Yahoo Finance
-│   │   └── cvm/                     # Parquets brutos da CVM
-│   ├── silver/                      # Dados normalizados (dbt staging)
-│   └── gold/                        # Dados prontos para consumo (dbt marts)
+│   │   ├── macro_bcb.py         # BCB: Selic, IPCA, câmbio, desemprego
+│   │   ├── market_yfinance.py   # Yahoo Finance: preço e múltiplos (.SA automático)
+│   │   └── fundamentals_cvm.py  # CVM: DRE/Balanço/CF via ITR + fallback DFP
+│   ├── loaders/
+│   │   └── postgres_loader.py   # Parquet → PostgreSQL (psycopg2) + dbt run
+│   ├── utils/
+│   │   ├── company_config.py    # Config central: tickers, CNPJs, padrão de arquivo
+│   │   ├── file_parser.py       # Parser de PDF/XLSX por nome de arquivo
+│   │   └── site_writer.py       # Bronze (Parquet) + Silver (PostgreSQL) writer
+│   └── synthesis/
+│       ├── rag.py               # Busca contexto nas tabelas gold
+│       └── llm_report.py        # Gera relatório via LLM
 │
 ├── dbt/
 │   ├── models/
 │   │   ├── staging/
-│   │   │   ├── stg_bcb.sql          # Normalização macro BCB
-│   │   │   ├── stg_yfinance.sql     # Normalização múltiplos yfinance
-│   │   │   └── stg_cvm.sql          # Normalização DRE CVM
-│   │   └── marts/
-│   │       ├── mart_asai3.sql       # Visão consolidada ASAI3
-│   │       ├── mart_prio3.sql       # Visão consolidada PRIO3
-│   │       └── mart_rent3.sql       # Visão consolidada RENT3
-│   ├── tests/
-│   │   └── test_quality.yml         # Testes de qualidade dbt
+│   │   │   ├── sources.yml      # Declaração das fontes raw
+│   │   │   ├── stg_bcb.sql      # Tipagem + NaN→NULL + renomeia colunas
+│   │   │   ├── stg_yfinance.sql # Tipagem + strip .SA + limpeza company_name
+│   │   │   └── stg_cvm.sql      # Tipagem + NUMERIC(18,2) para valores
+│   │   └── gold/
+│   │       ├── gold_macro.sql         # Macro BCB deduplicado por data
+│   │       ├── gold_market.sql        # Múltiplos yFinance deduplicados por ticker
+│   │       ├── gold_{ticker}_dre.sql  # Income Statement (contas 3.xx)
+│   │       ├── gold_{ticker}_balance.sql # Balance Sheet (1.xx + 2.xx)
+│   │       └── gold_{ticker}_cf.sql   # Cash Flow (contas 6.xx)
+│   ├── macros/
+│   │   └── generate_schema_name.sql  # Override: usa schema customizado sem prefixo
+│   ├── profiles.yml
 │   └── dbt_project.yml
 │
-├── synthesis/
-│   └── llm_report.py                # Síntese via LLM (mudanças pela tese)
+├── infra/
+│   └── init_db.sql              # Criação do banco, schemas e tabelas raw
 │
-├── dashboard/
-│   └── app.py                       # Streamlit — uma página por empresa + macro
+├── uploads/                     # Drop zone para PDFs e XLSXs de earnings
+│   └── processed/               # Arquivos processados pelo site_ingestion
 │
-├── docs/
-│   └── arquitetura_pipeline.md      # Fluxograma detalhado
-│
-├── Documentos/                      # Case e e-mail originais (referência)
-│
-├── .env.example
-├── .gitignore
-├── requirements.txt
-└── README.md
+├── Dockerfile                   # airflow:2.9.2-python3.11 + dependências
+├── docker-compose.yml           # postgres + airflow-init + webserver + scheduler + adminer
+├── .env.example                 # Template de variáveis de ambiente
+└── requirements.txt             # Dependências Python do pipeline
 ```
-
----
-
-## Roadmap — Módulos Futuros
-
-### Agentes de Transcrição de Reuniões de Resultado
-
-Módulo planejado para leitura automatizada dos transcritos de earnings calls das empresas, com dois agentes de propósito distinto:
-
-**Agente 1 — Thesis Tracker**
-- Varre o transcrito procurando menções aos temas e indicadores da tese do analista
-- Ex: menções a alavancagem, expansão de margem, geração de caixa, capex
-- Output: trechos relevantes mapeados por tema da tese, exibidos no dashboard
-
-**Agente 2 — Blind Spot Detector**
-- Procura informações que estão *fora* da tese mas foram mencionadas na reunião
-- Ex: mudança de gestão, risco regulatório, novo competidor, guidance revisado
-- Output: alertas sobre o que pode ter ficado debaixo do radar
-
-Ambos os outputs aparecem em colunas separadas no dashboard — o analista vê simultaneamente o que confirma/nega a tese e o que pode ter passado despercebido.
-
-> **Por que não está na Fase 1:** transcritos de empresas brasileiras não têm fonte pública estruturada e consistente. O módulo exige ingestão de PDFs dos sites de RI, o que ultrapassa o escopo do prazo atual. A arquitetura está definida para implementação futura.
 
 ---
 
 ## Pré-requisitos
 
-```bash
-python >= 3.10
-apache-airflow >= 2.8
-postgresql >= 14
-dbt-core >= 1.7
-```
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Variáveis de Ambiente
-
-```bash
-cp .env.example .env
-```
-
-| Variável | Descrição |
-|----------|-----------|
-| `LLM_API_KEY` | Chave da API do modelo de linguagem |
-| `LLM_PROVIDER` | Provedor: `anthropic` ou `openai` |
-| `POSTGRES_URL` | Connection string do PostgreSQL |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | Caminho para o JSON da service account |
-| `GOOGLE_DRIVE_FOLDER_ID` | ID da pasta no Google Drive |
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado e rodando
+- Git
 
 ---
 
 ## Como Executar
 
+### 1. Clonar o repositório
+
 ```bash
-# 1. Iniciar o Airflow
-airflow standalone
-
-# 2. Ativar a DAG no painel (localhost:8080)
-#    DAG: monday_briefing
-
-# 3. Ou rodar o pipeline manualmente
-python data-pipeline/extractors/macro_bcb.py
-python data-pipeline/extractors/market_yfinance.py
-python data-pipeline/extractors/fundamentals_cvm.py
-python data-pipeline/loaders/postgres_loader.py
-
-# 4. Rodar transformações dbt
-cd dbt && dbt run && dbt test
-
-# 5. Subir o dashboard
-streamlit run dashboard/app.py
+git clone <repo-url>
+cd centralizador_de_analise
 ```
+
+### 2. Configurar variáveis de ambiente
+
+```bash
+cp .env.example .env
+# Editar .env com as chaves de API necessárias
+```
+
+| Variável | Descrição |
+|----------|-----------|
+| `LLM_API_KEY` | Chave da API do modelo de linguagem |
+| `LLM_PROVIDER` | `anthropic` ou `openai` |
+| `PG_HOST` | Host do PostgreSQL (padrão: `postgres`) |
+| `PG_DB` | Nome do banco (padrão: `hipotetical_fia`) |
+| `PG_USER` | Usuário (padrão: `airflow`) |
+| `PG_PASSWORD` | Senha (padrão: `airflow`) |
+
+### 3. Subir os containers
+
+```bash
+docker-compose up --build -d
+```
+
+Aguardar ~60 segundos para o Airflow inicializar.
+
+### 4. Acessar as interfaces
+
+| Interface | URL | Credenciais |
+|-----------|-----|-------------|
+| Airflow | http://localhost:8080 | admin / admin |
+| Adminer (SQL) | http://localhost:8888 | Sistema: PostgreSQL / servidor: postgres / usuário: airflow / senha: airflow / banco: hipotetical_fia |
+
+### 5. Rodar o pipeline
+
+No Airflow (`localhost:8080`), acionar manualmente a DAG **`monday_briefing`**.
+
+O pipeline executa na ordem:
+```
+[extract_bcb, extract_yfinance, extract_cvm] → load_to_postgres → dbt_run
+```
+
+Após conclusão, as tabelas gold estarão disponíveis no PostgreSQL.
+
+### 6. Ingerir transcrições de earnings calls
+
+Copiar PDF para a pasta `uploads/` com o padrão de nome:
+```
+YYYY-MM-DD_TICKER_PERIODO_transcricao.pdf
+Exemplo: 2026-01-12_ASAI3_4T25_transcricao.pdf
+```
+
+A DAG **`site_ingestion`** detecta automaticamente o arquivo via FileSensor e processa.
 
 ---
 
-## Status
+## Fontes de Dados
 
-- [ ] Fase 1 — Extração macro (BCB)
-- [ ] Fase 1 — Extração micro (yfinance + CVM)
-- [ ] Fase 1 — Carga no PostgreSQL
-- [ ] Fase 1 — Transformação dbt (staging → marts)
-- [ ] Fase 1 — Síntese LLM pela tese
-- [ ] Fase 1 — Dashboard interativo (Streamlit)
-- [ ] Fase 2 — Pipeline recorrente com histórico (Airflow + Parquet)
-- [ ] Fase 2 — Tratamento de erros e logging
-- [ ] Fase 3 — RAG / Memória institucional (opcional)
-- [ ] Roadmap — Agentes de transcrição de earnings calls
+| Fonte | Tipo | Séries / Campos |
+|-------|------|-----------------|
+| [BCB SGS](https://api.bcb.gov.br) | Macro | Selic (432), IPCA (433), Desemprego (24369), USD/BRL (1), Balança Comercial (22707) |
+| [Yahoo Finance](https://finance.yahoo.com) | Mercado | Preço, Market Cap, P/L, P/VP, EV/EBITDA, ROE, Margens, DY |
+| [CVM](https://dados.cvm.gov.br) | Fundamentalista | DRE, Balanço Patrimonial, Fluxo de Caixa (ITR trimestral + DFP anual) |
+
+Todas as fontes são **públicas e gratuitas**, sem autenticação paga.
+
+---
+
+## Papel da LLM
+
+A LLM atua como **detector de mudanças relevantes pela tese**, não como analista autônomo.
+
+- **Faz:** descreve variações nos indicadores em relação ao período anterior e sinaliza impacto na tese de investimento (value investing, proteção ao downside)
+- **Não faz:** emite opiniões qualitativas genéricas nem avalia fatores subjetivos
+
+O contexto enviado ao modelo inclui: dados gold da empresa, indicadores macro e texto da transcrição do earnings call (RAG).
+
+---
+
+## Fase 3 — RAG do Método de Investimento
+
+A Fase 3 implementa um protótipo de RAG para incorporar o método de investimento da gestora ao processo de análise.
+
+**Fluxo:**
+1. Documento da tese/método é ingerido via `uploads/` (PDF)
+2. Texto é extraído e armazenado em `staging.transcripts`
+3. Na geração do relatório, o contexto do documento é recuperado junto com os dados gold
+4. O LLM responde ancorado tanto nos dados quantitativos quanto no método qualitativo da gestora
+
+**Por que não usar vector DB:** os documentos de tese são pequenos o suficiente para caber no contexto do modelo diretamente, sem necessidade de embeddings e busca vetorial.
+
+---
+
+## Notas Conhecidas
+
+| Issue | Status |
+|-------|--------|
+| ASAI3 sem dados CVM | CNPJ `06057223000171` não encontrado no ITR/DFP 2025. Investigar CNPJ correto na B3. |
+| Séries BCB com NULL | Normal — câmbio não tem dados em fins de semana; desemprego é trimestral; IPCA é mensal. |
+
+---
+
+## Status das Fases
+
+- [x] Fase 1 — Extração BCB, yFinance, CVM
+- [x] Fase 1 — Carga no PostgreSQL (psycopg2)
+- [x] Fase 1 — Transformação dbt (staging → gold)
+- [x] Fase 2 — Pipeline recorrente com Airflow (toda segunda às 8h)
+- [x] Fase 2 — Medallion architecture (bronze Parquet → staging → gold)
+- [x] Fase 2 — Tratamento de erros (NaN, CNPJ ausente, fallback ITR→DFP)
+- [ ] Fase 1 — Dashboard interativo (Streamlit) — em desenvolvimento
+- [ ] Fase 1 — Síntese LLM pela tese — em desenvolvimento
+- [ ] Fase 3 — RAG do método de investimento — em desenvolvimento
 
 ---
 
