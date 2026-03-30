@@ -162,17 +162,39 @@ cd centralizador_de_analise
 
 ```bash
 cp .env.example .env
-# Editar .env com as chaves de API necessárias
 ```
 
-| Variável | Descrição |
-|----------|-----------|
-| `LLM_API_KEY` | Chave da API do modelo de linguagem |
-| `LLM_PROVIDER` | `anthropic` ou `openai` |
-| `PG_HOST` | Host do PostgreSQL (padrão: `postgres`) |
-| `PG_DB` | Nome do banco (padrão: `hipotetical_fia`) |
-| `PG_USER` | Usuário (padrão: `airflow`) |
-| `PG_PASSWORD` | Senha (padrão: `airflow`) |
+Abra o arquivo `.env` e preencha as variáveis:
+
+```env
+# Provedor LLM: "anthropic" ou "openai"
+LLM_PROVIDER=anthropic
+LLM_API_KEY=sua_chave_aqui
+
+# Banco de dados (padrão funciona com docker-compose)
+PG_HOST=postgres
+PG_DB=hipotetical_fia
+PG_USER=airflow
+PG_PASSWORD=airflow
+```
+
+#### Onde obter a chave de API
+
+| Provedor | Link | Modelo utilizado |
+|----------|------|-----------------|
+| **Anthropic** (padrão) | [console.anthropic.com](https://console.anthropic.com) → API Keys | `claude-haiku-4-5-20251001` |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com) → API Keys | `gpt-4o-mini` |
+
+> **Nota:** A chave fica em `.env` na raiz do projeto. Esse arquivo está no `.gitignore` e **nunca deve ser commitado**.
+
+| Variável | Descrição | Padrão |
+|----------|-----------|--------|
+| `LLM_PROVIDER` | Provedor do modelo | `anthropic` |
+| `LLM_API_KEY` | Chave de API do provedor escolhido | — |
+| `PG_HOST` | Host do PostgreSQL | `postgres` |
+| `PG_DB` | Nome do banco | `hipotetical_fia` |
+| `PG_USER` | Usuário | `airflow` |
+| `PG_PASSWORD` | Senha | `airflow` |
 
 ### 3. Subir os containers
 
