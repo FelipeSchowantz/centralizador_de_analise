@@ -16,6 +16,8 @@ COMPANIES = {
         "cnpj":         "06057223000171",
         "source_type":  "pdf",
         "content_type": "transcript",   # PDF com transcrição de call de resultados
+        # TODO: CNPJ não encontrado nem no ITR nem no DFP da CVM (2025).
+        # Verificar CNPJ correto na B3 ou usar transcript como fonte primária.
     },
     "PRIO3": {
         "name":         "PetroRio",

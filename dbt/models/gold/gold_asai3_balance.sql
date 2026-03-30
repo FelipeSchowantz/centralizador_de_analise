@@ -1,15 +1,14 @@
 -- gold_asai3_balance.sql
--- ASAI3 — Balanço Patrimonial (Ativo 1.xx + Passivo/PL 2.xx)
+-- ASAI3 — Balance Sheet (Assets 1.xx + Liabilities/Equity 2.xx)
 
 select
-    "DT_REFER"      as data_referencia,
-    "DT_FIM_EXERC"  as data_fim_exercicio,
-    "CD_CONTA"      as codigo_conta,
-    "DS_CONTA"      as descricao_conta,
-    "VL_CONTA"      as valor,
-    "ESCALA_MOEDA"  as escala,
-    _extracted_at
+    ref_date,
+    period_end,
+    account_code,
+    account_name,
+    account_value,
+    currency_scale
 from {{ ref('stg_cvm') }}
-where "CNPJ_CIA" = '06057223000171'
-  and ("CD_CONTA" like '1.%' or "CD_CONTA" like '2.%')
-order by "DT_REFER" desc, "CD_CONTA"
+where cnpj = '06057223000171'
+  and (account_code like '1.%' or account_code like '2.%')
+order by ref_date desc, account_code

@@ -39,8 +39,9 @@ def extract_yfinance(tickers: list[str]) -> None:
     rows = []
     for ticker in tickers:
         try:
-            info = yf.Ticker(ticker).info
-            row = {"ticker": ticker, "_extracted_at": pd.Timestamp.utcnow()}
+            yf_ticker = ticker if ticker.endswith(".SA") else f"{ticker}.SA"
+            info = yf.Ticker(yf_ticker).info
+            row = {"ticker": ticker, "_extracted_at": pd.Timestamp.utcnow()}  # salva sem .SA
             for field in INFO_FIELDS:
                 row[field] = info.get(field)
             rows.append(row)
