@@ -19,9 +19,11 @@ x-airflow-volumes: &airflow-volumes
   - ./data-pipeline/dags:/opt/airflow/dags
   - ./data-pipeline/extractors:/opt/airflow/data-pipeline/extractors
   - ./data-pipeline/loaders:/opt/airflow/data-pipeline/loaders
+  - ./data-pipeline/utils:/opt/airflow/data-pipeline/utils
   - ./synthesis:/opt/airflow/data-pipeline/synthesis
   - ./dbt:/opt/airflow/dbt
   - ./data-lakehouse:/opt/airflow/data-lakehouse
+  - ./uploads:/opt/airflow/uploads
   - airflow-logs:/opt/airflow/logs
 
 # ── Serviços ──────────────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
 """
 Extrator — CVM (Comissão de Valores Mobiliários)
 Fonte: dados.cvm.gov.br (pública, sem autenticação)
-Coleta: linhas de DRE via ITR/DFP
+Coleta: DRE, Balanço Patrimonial (Ativo+Passivo) e Fluxo de Caixa via ITR consolidado
 Saída:
-  - __main__ (teste): CSV bruto em testes/cvm/ + Parquet filtrado em testes/cvm/
-  - Airflow:          Parquet filtrado em data-lakehouse/bronze/cvm/
+  - __main__ (teste): CSV bruto em testes/cvm/
+  - Airflow:          Parquet em data-lakehouse/bronze/cvm/
 """
 
 import requests
@@ -14,90 +14,103 @@ import io
 from datetime import date
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT        = Path(__file__).resolve().parents[2]
 BRONZE_PATH = ROOT / "data-lakehouse" / "bronze" / "cvm"
 TEST_PATH   = ROOT / "testes" / "cvm"
 
-# CNPJs das empresas (necessário para filtrar nos arquivos da CVM)
+# CNPJs sem formatação
 EMPRESA_CNPJ = {
-    "ASAI3": "06.057.223/0001-71",  # Assaí Atacadista
-    "PRIO3": "10.629.105/0001-68",  # PetroRio
-    "RENT3": "16.670.085/0001-55",  # Localiza
+    "ASAI3": "06057223000171",
+    "PRIO3": "10629105000168",
+    "RENT3": "16670085000155",
 }
 
-# Linhas de DRE de interesse (conta contábil padrão CVM)
-CONTAS_DRE = [
-    "3.01",   # Receita Líquida
-    "3.05",   # EBIT
-    "3.11",   # Lucro Líquido
-    "3.07",   # Depreciação e Amortização (quando disponível)
-]
+# CSVs dentro do ZIP que nos interessam → prefixo de conta CVM
+STATEMENT_MAP = {
+    "DRE_con":    "3.",   # Demonstração de Resultado
+    "BPA_con":    "1.",   # Balanço Patrimonial — Ativo
+    "BPP_con":    "2.",   # Balanço Patrimonial — Passivo e PL
+    "DFC_MI_con": "6.",   # Fluxo de Caixa (método indireto)
+}
 
 CVM_ITR_URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/ITR/DADOS/"
 
 
-def _download_itr(ano: int) -> pd.DataFrame:
-    """Baixa o ZIP da CVM e extrai o CSV de DRE consolidado."""
-    filename = f"itr_cia_aberta_{ano}.zip"
-    url = CVM_ITR_URL + filename
+def _download_zip(ano: int) -> zipfile.ZipFile:
+    """Baixa o ZIP anual da CVM e retorna o objeto ZipFile em memória."""
+    url = CVM_ITR_URL + f"itr_cia_aberta_{ano}.zip"
     print(f"[CVM] Baixando {url}")
-    resp = requests.get(url, timeout=120)
+    resp = requests.get(url, timeout=180)
     resp.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-        csv_name = [n for n in z.namelist() if "DRE_con" in n][0]
-        print(f"[CVM] Extraindo {csv_name}")
-        with z.open(csv_name) as f:
-            df = pd.read_csv(f, sep=";", encoding="latin-1", dtype=str)
+    return zipfile.ZipFile(io.BytesIO(resp.content))
+
+
+def _extract_statement(zf: zipfile.ZipFile, key: str) -> pd.DataFrame:
+    """Extrai um CSV específico do ZIP pelo prefixo do nome."""
+    matches = [n for n in zf.namelist() if key in n]
+    if not matches:
+        print(f"[CVM] CSV '{key}' não encontrado no ZIP")
+        return pd.DataFrame()
+    with zf.open(matches[0]) as f:
+        df = pd.read_csv(f, sep=";", encoding="latin-1", dtype=str)
+    print(f"[CVM] '{matches[0]}' — {len(df)} linhas brutas")
     return df
 
 
-def _filter(df_raw: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
-    """Filtra pelas empresas e contas contábeis de interesse."""
+def _filter(df: pd.DataFrame, tickers: list[str], conta_prefix: str) -> pd.DataFrame:
+    """Filtra por empresa e prefixo de conta contábil."""
     cnpjs = [EMPRESA_CNPJ[t] for t in tickers if t in EMPRESA_CNPJ]
-    cnpjs_clean = [c.replace(".", "").replace("/", "").replace("-", "") for c in cnpjs]
-
-    df_raw["CNPJ_CIA"] = df_raw["CNPJ_CIA"].str.replace(r"\D", "", regex=True)
-
-    df = df_raw[
-        df_raw["CNPJ_CIA"].isin(cnpjs_clean) &
-        df_raw["CD_CONTA"].isin(CONTAS_DRE)
+    df["CNPJ_CIA"] = df["CNPJ_CIA"].str.replace(r"\D", "", regex=True)
+    return df[
+        df["CNPJ_CIA"].isin(cnpjs) &
+        df["CD_CONTA"].str.startswith(conta_prefix)
     ].copy()
-
-    df["_extracted_at"] = pd.Timestamp.utcnow()
-    return df
 
 
 def extract_cvm(tickers: list[str], out_path: Path = BRONZE_PATH) -> None:
     """
-    Coleta DRE da CVM, filtra empresas e salva Parquet.
-    Usado pelo Airflow.
+    Baixa o ZIP da CVM, extrai DRE + BP + CF, filtra empresas e salva Parquet único.
     """
-    ano_atual = date.today().year
-
+    ano = date.today().year
     try:
-        df_raw = _download_itr(ano=ano_atual)
+        zf = _download_zip(ano)
     except Exception as e:
         print(f"[CVM] Tentando ano anterior: {e}")
-        df_raw = _download_itr(ano=ano_atual - 1)
+        zf = _download_zip(ano - 1)
 
-    df_filtered = _filter(df_raw, tickers)
+    frames = []
+    for key, prefix in STATEMENT_MAP.items():
+        df_raw  = _extract_statement(zf, key)
+        if df_raw.empty:
+            continue
+        df_filt = _filter(df_raw, tickers, prefix)
+        df_filt["_statement"] = key
+        frames.append(df_filt)
+
+    if not frames:
+        raise RuntimeError("[CVM] Nenhum dado coletado.")
+
+    result = pd.concat(frames, ignore_index=True)
+    result["_extracted_at"] = pd.Timestamp.utcnow()
 
     out_path.mkdir(parents=True, exist_ok=True)
-    parquet_file = out_path / f"cvm_{date.today().isoformat()}.parquet"
-    df_filtered.to_parquet(parquet_file, index=False)
-    print(f"[CVM] {len(df_filtered)} linhas salvas em {parquet_file}")
+    out_file = out_path / f"cvm_{date.today().isoformat()}.parquet"
+    result.to_parquet(out_file, index=False)
+    print(f"[CVM] {len(result)} linhas salvas em {out_file}")
 
 
 if __name__ == "__main__":
-    ano_atual = date.today().year
-
+    ano = date.today().year
     try:
-        df_raw = _download_itr(ano=ano_atual)
+        zf = _download_zip(ano)
     except Exception as e:
         print(f"[CVM] Tentando ano anterior: {e}")
-        df_raw = _download_itr(ano=ano_atual - 1)
+        zf = _download_zip(ano - 1)
 
     TEST_PATH.mkdir(parents=True, exist_ok=True)
-    csv_file = TEST_PATH / f"cvm_raw_{date.today().isoformat()}.csv"
-    df_raw.to_csv(csv_file, index=False)
-    print(f"[CVM] CSV bruto salvo em {csv_file}")
+    for key, _ in STATEMENT_MAP.items():
+        df = _extract_statement(zf, key)
+        if not df.empty:
+            out = TEST_PATH / f"cvm_raw_{key}_{date.today().isoformat()}.csv"
+            df.to_csv(out, index=False)
+            print(f"[CVM] CSV salvo em {out}")
