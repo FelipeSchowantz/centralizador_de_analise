@@ -1,0 +1,19 @@
+name: hipotetical_fia
+version: "1.0.0"
+config-version: 2
+
+profile: hipotetical_fia
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  hipotetical_fia:
+    staging:
+      +schema: staging
+      +materialized: view
+    gold:
+      +schema: gold
+      +materialized: table
